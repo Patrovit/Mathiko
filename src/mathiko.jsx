@@ -155,6 +155,24 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v24 · 2026-05-24 · fix   · VERSION 2.28.0-dev
+        Ensemble de finitions :
+          — Messages d'erreur RPC nettoyés (génériques côté UI, détail complet
+            dans la console pour debug).
+          — Audit emoji cross-plateforme : substitution des glyphes trop
+            récents (Emoji 14+/15+/16) qui ne s'affichaient pas sur des iPads
+            un peu anciens. Remplacements : 🪾→🍂 (friche), 🪏→🧱 (chantier),
+            🫘→🌰 (chantier), 🪇→🎊 (célébration), 🫶→🤩 (célébration),
+            🫏→🦓 (équidés). Les plantes 🪷 et 🪻 retirées de PLANTS +
+            SMALL_PLANTS_POOL (18 → 16 items). Les Emoji 12.1/13 (🧑🏻‍…, 🪨,
+            🪴, 🦤) sont conservés — normalement OK sur iPad 2017+.
+          — Numpad tactile en jeu : l'input `<number>` est remplacé par un
+            champ readOnly + un pavé numérique 3×4 (chiffres, backspace, ✓
+            valider). Plus de clavier virtuel qui masque la grille sur
+            mobile. Le clavier PHYSIQUE (desktop) continue de marcher :
+            onKeyDown intercepte chiffres, backspace, Entrée.
+          — index.html du repo (Vercel) : `mobile-web-app-capable` ajouté à
+            côté du `apple-mobile-web-app-capable` (warning Chrome fixé).
    v23 · 2026-05-23 · fix   · VERSION 2.28.0-dev
         PinPad : nouvelle option `showDigits` — quand elle est activée, les
         chiffres tapés apparaissent en clair dans des cases plutôt que sous
@@ -381,7 +399,7 @@ const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 23; // révision de fichier — voir CHANGELOG
+const REVISION = 24; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -417,7 +435,7 @@ const TABLES = {
     high: { name: "Les Forestiers",      animals: ["🦌", "🦝", "🐿️", "🦨"] },
   },
   7: {
-    low:  { name: "Les Équidés",         animals: ["🦄", "🐎", "🫏", "🐖"] },
+    low:  { name: "Les Équidés",         animals: ["🦄", "🐎", "🦓", "🐖"] },
     high: { name: "Les Ruminants",       animals: ["🐃", "🐂", "🐄", "🐐"] },
   },
   8: {
@@ -487,7 +505,7 @@ const COMBO_LABELS_LEGENDARY = [
 //   KEEPERS        : soigneurs, la récompense rare des très gros combos (×10+).
 //   CELEBRATIONS   : emojis de fête réservés aux parties parfaites (zéro erreur).
 //   PERFECT_LABELS : phrases de félicitations pour ces mêmes parties parfaites.
-const PLANTS = ["🪴", "🌵", "🌴", "🌲", "🌳", "🌱", "🌻", "🌼", "🌷", "🌹", "🌿", "🌾", "🪻", "🌸", "🌺", "🪷", "🎋", "🍄"];
+const PLANTS = ["🪴", "🌵", "🌴", "🌲", "🌳", "🌱", "🌻", "🌼", "🌷", "🌹", "🌿", "🌾", "🌸", "🌺", "🎋", "🍄"];
 // Sous-ensembles utilisés UNIQUEMENT pour le décor du refuge (tileForEntry).
 // Les boîtes 4 (vert clair) accueillent de petites plantes / fleurs au ras du
 // sol ; les boîtes 5 (vert foncé) accueillent les grands arbres et les hautes
@@ -495,12 +513,12 @@ const PLANTS = ["🪴", "🌵", "🌴", "🌲", "🌳", "🌱", "🌻", "🌼", 
 // collecte via combos. Si un emoji est ajouté à PLANTS plus tard, n'oublie pas
 // de l'ajouter aussi à l'un des deux sous-ensembles si tu veux qu'il puisse
 // apparaître sur la grille du refuge.
-const SMALL_PLANTS_POOL = ["🌱", "🌿", "🌻", "🌼", "🌷", "🌹", "🪻", "🌸", "🌺", "🪷", "🍄"];
+const SMALL_PLANTS_POOL = ["🌱", "🌿", "🌻", "🌼", "🌷", "🌹", "🌸", "🌺", "🍄"];
 const BIG_PLANTS_POOL   = ["🪴", "🌵", "🌴", "🌲", "🌳", "🌾", "🎋"];
 const FOODS  = ["🍌", "🥩", "🌽", "🥕", "🥜", "🥬", "🍎", "🍖", "🧀", "🦴", "🐟", "🍯"];
 const JUNK   = ["🎩","🎺","🔋","🖨️","🪠","🏺","🩲","☎️","🪗","♟️","🛼","🧻","🎻","🧲","🧸","🪆","🪒","🪑","📠","📺","🎰","🥁","🎷","🗿"];
 const KEEPERS = ["👩🏻‍⚕️","👩🏼‍⚕️","👩🏽‍⚕️","👩🏿‍⚕️","👨🏻‍⚕️","👨🏼‍⚕️","👨🏽‍⚕️","👨🏿‍⚕️","🎅🏻","👩🏻‍🌾","👩🏼‍🌾","👨🏻‍🌾","🦸🏻‍♀️","🧑🏻‍🍳","🧑🏻‍🚒","🧑🏻‍🔬","🧙🏻‍♀️","🧑🏻‍🦳"];
-const CELEBRATIONS = ["🎂","🍾","🤸🏼‍♀️","🤸🏻‍♀️","🤸🏽‍♀️","🏆","🥇","🚀","💃","🕺","💪","👌","👍","👏","🫶","🙌","👯‍♀️","👯","🎉","🪇"];
+const CELEBRATIONS = ["🎂","🍾","🤸🏼‍♀️","🤸🏻‍♀️","🤸🏽‍♀️","🏆","🥇","🚀","💃","🕺","💪","👌","👍","👏","🤩","🙌","👯‍♀️","👯","🎉","🎊"];
 const PERFECT_LABELS = [
   "Sans-faute légendaire !",
   "Aucune erreur ! Mais ÇA c'est fort !",
@@ -588,7 +606,7 @@ const AVATARS = ["🐶", "🐷", "🐭", "🐻", "🦊", "🐰", "🐼", "🐨",
 // 21 tiers de base. Au-delà, on préfixe avec autant de 🔥 que nécessaire et on
 // reboucle sur la base. Ex. : série 22 → "🔥👍", série 42 → "🔥🔥", 43 → "🔥🔥👍".
 // 👋 est réservé au cas « série = 0 » (jamais joué, ou série cassée).
-const STREAK_TIERS = ["👍","👌","👏","🙌","🤘","🤙","🫰","🫶","⭐","🌟","💫","✨","💛","🧡","🩷","💓","💗","💖","♥️","❤️‍🔥","🔥"];
+const STREAK_TIERS = ["👍","👌","👏","🙌","🤘","🤙","🤟","🥰","⭐","🌟","💫","✨","💛","🧡","💕","💓","💗","💖","♥️","❤️‍🔥","🔥"];
 // Pool de chats pour les jours joués (un chat est tiré aléatoirement mais
 // DÉTERMINISTE par date via dailyHash — même jour = même chat à tous les rendus).
 const STREAK_CATS = ["🐱","😺","😸","😹","😻"];
@@ -1741,7 +1759,7 @@ export default function Mathiko() {
     if (error) {
       // eslint-disable-next-line no-console
       console.error("login_profile RPC error:", error);
-      setAuthError("Erreur : " + ((error.message || "réseau").slice(0, 80)) + " · voir console");
+      setAuthError("Erreur réseau. Réessaie.");
       setAuthPin("");
       return;
     }
@@ -1791,9 +1809,7 @@ export default function Mathiko() {
       } else if (msg.includes("pin must be exactly 4 digits")) {
         setAuthError("Le code doit contenir exactement 4 chiffres.");
       } else {
-        // Message brut affiché temporairement pour aider au debug — à
-        // remplacer par un message générique une fois le flow stabilisé.
-        setAuthError("Erreur : " + (msg.slice(0, 80) || "inconnue") + " · voir console");
+        setAuthError("Erreur, réessaie.");
       }
       setAuthPin("");
       return;
@@ -2337,8 +2353,20 @@ export default function Mathiko() {
   }
 
   function onKeyDown(e) {
-    if (e.key === "Enter" && val.trim() && phase === "game") {
+    if (phase !== "game") return;
+    if (e.key === "Enter" && val.trim()) {
       handleSubmit(false);
+      return;
+    }
+    // Support du clavier PHYSIQUE (desktop) : l'input est en readOnly (pour
+    // bloquer le clavier virtuel mobile), donc on doit intercepter les
+    // chiffres et le backspace pour modifier `val` programmatiquement.
+    if (/^[0-9]$/.test(e.key)) {
+      if (val.length < 2) setVal(val + e.key);
+      e.preventDefault();
+    } else if (e.key === "Backspace") {
+      setVal(val.slice(0, -1));
+      e.preventDefault();
     }
   }
 
@@ -4293,10 +4321,10 @@ export default function Mathiko() {
           .forEach((k, i) => { improvedOrder[k] = i; });
 
         // Cell visuals: bg color + decoration pool by box
-        const TILE_FRICHE_NEW = ["🪨", "🪾", "🕸️"];
+        const TILE_FRICHE_NEW = ["🪨", "🍂", "🕸️"];
         const TILE_FRICHE_TRIED = [""];
         const TILE_PREP_1 = ["", "🚧", "🛠️", "🚜", "🦺"];
-        const TILE_PREP_2 = ["", "🪏", "⛏️", "🫘"];
+        const TILE_PREP_2 = ["", "🧱", "⛏️", "🌰"];
         const TILE_PREP_3 = ["", "🌱", "🚿", "🪧"];
         const TILE_GRASS_LIGHT = ["", "🌿"];
         const TILE_GRASS_DARK  = ["", "🌳", "🌻", "🌷"];
@@ -5173,11 +5201,17 @@ export default function Mathiko() {
             {curQ.a} × {curQ.b} <span style={{ color: "#C4B8D4" }}>=</span>
           </div>
 
+          {/* Zone d'affichage (au lieu de l'input éditable) — bloque le
+              clavier natif mobile qui gênait la lisibilité de la grille.
+              L'input reste présent pour le focus + gestion clavier PHYSIQUE
+              (desktop), avec inputMode="none" pour ne pas ouvrir un keyboard
+              virtuel. La modification passe désormais par le numpad ci-dessous. */}
           <input
             ref={inputRef}
-            type="number"
+            type="text"
+            inputMode="none"
+            readOnly
             value={val}
-            onChange={e => setVal(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="?"
             style={{
@@ -5187,16 +5221,45 @@ export default function Mathiko() {
               border: "3px solid #EEE4FF", borderRadius: 18,
               color: "#4A4063", background: "#FFF8FF",
               fontFamily: "inherit", outline: "none",
+              caretColor: "transparent",
             }}
           />
 
-          <button
-            onClick={() => val.trim() && handleSubmit(false)}
-            disabled={!val.trim()}
-            style={{ ...btnStyle("#FF8FAB", "rgba(255,143,171,0.4)", !val.trim()), fontSize: 16, padding: "11px 30px" }}
-          >
-            Valider ↵
-          </button>
+          {/* Numpad tactile 3×4 : chiffres 1-9, backspace, 0, valider ✓.
+              Le max est 2 chiffres (produits jusqu'à 9×9=81). La valeur est
+              modifiée via setVal et le submit passe par handleSubmit(false). */}
+          {(() => {
+            const cell = (variant) => ({
+              fontSize: variant === "op" ? 22 : 26, fontWeight: 700, fontFamily: "inherit",
+              padding: "13px 0",
+              background: variant === "back" ? "#F0EAF7"
+                        : variant === "ok"   ? "linear-gradient(135deg, #7BC9A0, #5FB380)"
+                        : "white",
+              color: variant === "back" ? "#7B6D8E"
+                   : variant === "ok"   ? "white"
+                   : "#4A4063",
+              border: variant === "ok" ? "2px solid #5FB380" : "2px solid #D6CFE2",
+              borderRadius: 16,
+              cursor: "pointer", touchAction: "manipulation",
+              boxShadow: variant === "ok" ? "0 3px 10px rgba(95,179,128,0.4)" : "0 2px 6px rgba(0,0,0,0.05)",
+            });
+            const pushDigit = d => { if (val.length < 2) setVal(val + d); };
+            const back = () => setVal(val.slice(0, -1));
+            const ok = () => { if (val.trim()) handleSubmit(false); };
+            return (
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8,
+                maxWidth: 300, margin: "0 auto",
+              }}>
+                {[1,2,3,4,5,6,7,8,9].map(n => (
+                  <button key={n} onClick={() => pushDigit(String(n))} style={cell()}>{n}</button>
+                ))}
+                <button onClick={back} disabled={val.length === 0} style={{ ...cell("back"), opacity: val.length === 0 ? 0.4 : 1 }}>←</button>
+                <button onClick={() => pushDigit("0")} style={cell()}>0</button>
+                <button onClick={ok} disabled={!val.trim()} style={{ ...cell("ok"), opacity: val.trim() ? 1 : 0.4, cursor: val.trim() ? "pointer" : "not-allowed" }}>✓</button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
