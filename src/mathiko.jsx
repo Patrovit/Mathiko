@@ -155,6 +155,15 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v23 · 2026-05-23 · fix   · VERSION 2.28.0-dev
+        PinPad : nouvelle option `showDigits` — quand elle est activée, les
+        chiffres tapés apparaissent en clair dans des cases plutôt que sous
+        forme de cercles opaques. Activée dans l'écran de création de refuge
+        pour aider la joueuse(eur) à mémoriser le code qu'elle vient de
+        choisir. Le login garde les cercles (privacy).
+        Debug d'auth : les messages d'erreur RPC de Supabase sont maintenant
+        remontés en clair dans l'UI (tronqués à 80 caractères) et logués dans
+        la console. À finaliser (message générique) une fois le flow stabilisé.
    v22 · 2026-05-23 · feat  · VERSION 2.27.0 → 2.28.0-dev
         Authentification cloud Supabase et synchronisation des sauvegardes.
         Chaque joueuse(eur) a maintenant un « refuge » identifié par un pseudo
@@ -372,7 +381,7 @@ const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 22; // révision de fichier — voir CHANGELOG
+const REVISION = 23; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -1413,7 +1422,7 @@ function getComboLabel(combo) {
 // retour-arrière. Quand `value` atteint `maxLength`, on appelle `onSubmit`
 // automatiquement après ~150 ms (pour laisser à la joueuse(eur) le temps de
 // VOIR le dernier chiffre tapé).
-function PinPad({ value, onChange, onSubmit, maxLength = 4, disabled = false, accent = "#7BC9A0" }) {
+function PinPad({ value, onChange, onSubmit, maxLength = 4, disabled = false, accent = "#7BC9A0", showDigits = false }) {
   const handleDigit = (d) => {
     if (disabled || value.length >= maxLength) return;
     const next = value + d;
@@ -1437,19 +1446,40 @@ function PinPad({ value, onChange, onSubmit, maxLength = 4, disabled = false, ac
   });
   return (
     <div>
-      {/* Dots indiquant la progression de la saisie */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 22 }}>
-        {Array.from({ length: maxLength }).map((_, i) => (
-          <div key={i} style={{
-            width: 18, height: 18, borderRadius: "50%",
-            background: i < value.length ? accent : "transparent",
-            border: `2.5px solid ${i < value.length ? accent : "#D6CFE2"}`,
-            transition: "background 0.15s, border-color 0.15s, transform 0.15s",
-            transform: i === value.length - 1 ? "scale(1.15)" : "scale(1)",
-          }} />
-        ))}
+      {/* Affichage de la saisie — deux modes :
+          • showDigits=false (login) : cercles pleins vs vides (façon PIN classique)
+          • showDigits=true (création) : les chiffres tapés apparaissent en gros
+            pour aider la joueuse(eur) à MÉMORISER son code. */}
+      <div style={{
+        display: "flex", justifyContent: "center", gap: showDigits ? 8 : 14,
+        marginBottom: 22, minHeight: 36,
+      }}>
+        {Array.from({ length: maxLength }).map((_, i) => {
+          const filled = i < value.length;
+          if (showDigits) {
+            return (
+              <div key={i} style={{
+                width: 34, height: 42, borderRadius: 10,
+                background: filled ? "white" : "#F7F3FB",
+                border: `2px solid ${filled ? accent : "#D6CFE2"}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22, fontWeight: 800, color: "#4A4063",
+                transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+                transform: i === value.length - 1 ? "scale(1.06)" : "scale(1)",
+              }}>{filled ? value[i] : ""}</div>
+            );
+          }
+          return (
+            <div key={i} style={{
+              width: 18, height: 18, borderRadius: "50%",
+              background: filled ? accent : "transparent",
+              border: `2.5px solid ${filled ? accent : "#D6CFE2"}`,
+              transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+              transform: i === value.length - 1 ? "scale(1.15)" : "scale(1)",
+            }} />
+          );
+        })}
       </div>
-      {/* Pavé 3×4 */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, maxWidth: 300, margin: "0 auto" }}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
           <button key={n} onClick={() => handleDigit(String(n))} disabled={disabled} style={cellStyle()}>{n}</button>
@@ -1709,7 +1739,9 @@ export default function Mathiko() {
     });
     setAuthBusy(false);
     if (error) {
-      setAuthError("Erreur réseau. Réessaie.");
+      // eslint-disable-next-line no-console
+      console.error("login_profile RPC error:", error);
+      setAuthError("Erreur : " + ((error.message || "réseau").slice(0, 80)) + " · voir console");
       setAuthPin("");
       return;
     }
@@ -1751,9 +1783,18 @@ export default function Mathiko() {
     });
     setAuthBusy(false);
     if (error) {
-      setAuthError(error.message && error.message.includes("pseudo too short")
-        ? "Pseudo trop court (2 caractères minimum)."
-        : "Erreur. Réessaie.");
+      // eslint-disable-next-line no-console
+      console.error("create_profile RPC error:", error);
+      const msg = error.message || "";
+      if (msg.includes("pseudo too short")) {
+        setAuthError("Pseudo trop court (2 caractères minimum).");
+      } else if (msg.includes("pin must be exactly 4 digits")) {
+        setAuthError("Le code doit contenir exactement 4 chiffres.");
+      } else {
+        // Message brut affiché temporairement pour aider au debug — à
+        // remplacer par un message générique une fois le flow stabilisé.
+        setAuthError("Erreur : " + (msg.slice(0, 80) || "inconnue") + " · voir console");
+      }
       setAuthPin("");
       return;
     }
@@ -2705,6 +2746,7 @@ export default function Mathiko() {
                   doCreate(authPseudo.trim(), authAvatar, pin);
                 }}
                 disabled={authBusy || authPseudo.trim().length < 2}
+                showDigits={true}
               />
               <div style={errSt}>{authError}</div>
               <div style={{ marginTop: 14 }}>
