@@ -1,4 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── Supabase client ──────────────────────────────────────────────────────
+// Single global instance, configured from Vite env vars (les variables avec
+// préfixe VITE_ sont exposées au navigateur par Vite — voir le repo GitHub).
+// Si elles manquent (run local sans .env), supabase est null et l'app
+// affichera un message d'erreur explicite plutôt que de planter.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
 
 /* ╔═══════════════════════════════════════════════════════════════════════════╗
    ║                                                                           ║
@@ -143,6 +155,31 @@ import React, { useState, useEffect, useRef } from "react";
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v22 · 2026-05-23 · feat  · VERSION 2.27.0 → 2.28.0-dev
+        Authentification cloud Supabase et synchronisation des sauvegardes.
+        Chaque joueuse(eur) a maintenant un « refuge » identifié par un pseudo
+        + un code à 4 chiffres ; le store complet est sauvegardé dans la base
+        Supabase, ce qui permet de retrouver son refuge sur n'importe quel
+        appareil (téléphone, tablette, ordi).
+        Nouveau flow d'auth (avant le jeu) : picker des refuges connus sur cet
+        appareil, écran de login (pseudo connu pré-rempli + code), écran de
+        création (pseudo + avatar + code). Cartes du picker stockent juste
+        l'id, le pseudo et l'avatar en localStorage — JAMAIS le code, qui est
+        toujours retapé. Une croix permet de retirer un refuge de l'appareil
+        (sans le supprimer côté cloud — c'est juste une liste rapide).
+        Composant `PinPad` réutilisable créé pour l'auth (et plus tard pour
+        la saisie des calculs en mode jeu sur mobile).
+        Le bouton « Changer » du menu déclenche désormais une déconnexion
+        cloud (retour au picker), au lieu du switch local entre profils. Le
+        flow profils local est conservé en fallback (si les env vars
+        Supabase manquent) mais devient inaccessible en mode cloud normal.
+        Sauvegarde cloud DÉBOUNCÉE à 2 s — pas de spam Supabase à chaque
+        changement de state. Le store local reste écrit à chaque modif (cache
+        instantané pour la session courante). Le code (PIN) reste UNIQUEMENT
+        en mémoire vive — il faut le retaper à chaque rechargement de page.
+        Côté serveur : 3 fonctions stockées (`create_profile`, `login_profile`,
+        `save_store`) avec PIN bcrypt-hashé, Row Level Security activée, accès
+        direct à la table bloqué. Voir documentation Supabase du projet.
    🚀 RELEASE v21 · 2026-05-21 · feat  · VERSION 2.26.0 → 2.27.0
         Uniformisation du nombre de calculs des modes d'entretien — Défricher,
         Aménager et Cultiver passent tous à **10 calculs** (Accueillir était
@@ -329,13 +366,13 @@ import React, { useState, useEffect, useRef } from "react";
 // Une révision purement documentaire ou de refactor ne bump PAS VERSION.
 // Affichée dans le menu, l'écran debug et le pied de page. Historique complet
 // dans le bloc CHANGELOG en tête de fichier.
-const VERSION = "2.27.0"; // version produit (semver) — voir CHANGELOG
+const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 
 // REVISION = compteur de RÉVISION DE FICHIER. À incrémenter à CHAQUE livraison
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 21; // révision de fichier — voir CHANGELOG
+const REVISION = 22; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -1370,6 +1407,61 @@ function getComboLabel(combo) {
 //   4. Actions : créer/choisir profil, démarrer/quitter une partie, soumettre…
 //   5. Helpers de rendu et de style
 //   6. Le grand `return ( … )` : une suite de blocs `{phase === "x" && (…)}`
+// ─── PinPad ───────────────────────────────────────────────────────────────
+// Pavé numérique mobile-friendly, réutilisable. Affiche `value.length` cercles
+// pleins parmi `maxLength` cercles. Le clavier a 3 colonnes : 1-9, puis 0 et
+// retour-arrière. Quand `value` atteint `maxLength`, on appelle `onSubmit`
+// automatiquement après ~150 ms (pour laisser à la joueuse(eur) le temps de
+// VOIR le dernier chiffre tapé).
+function PinPad({ value, onChange, onSubmit, maxLength = 4, disabled = false, accent = "#7BC9A0" }) {
+  const handleDigit = (d) => {
+    if (disabled || value.length >= maxLength) return;
+    const next = value + d;
+    onChange(next);
+    if (next.length === maxLength && onSubmit) {
+      setTimeout(() => onSubmit(next), 150);
+    }
+  };
+  const handleBack = () => { if (!disabled) onChange(value.slice(0, -1)); };
+  const cellStyle = (variant) => ({
+    fontSize: variant === "back" ? 22 : 26,
+    fontWeight: 700, fontFamily: "inherit",
+    padding: "14px 0",
+    background: variant === "back" ? "#F0EAF7" : "white",
+    color: variant === "back" ? "#7B6D8E" : "#4A4063",
+    border: "2px solid #D6CFE2", borderRadius: 16,
+    cursor: disabled ? "default" : "pointer",
+    touchAction: "manipulation",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+    transition: "transform 0.08s",
+  });
+  return (
+    <div>
+      {/* Dots indiquant la progression de la saisie */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 22 }}>
+        {Array.from({ length: maxLength }).map((_, i) => (
+          <div key={i} style={{
+            width: 18, height: 18, borderRadius: "50%",
+            background: i < value.length ? accent : "transparent",
+            border: `2.5px solid ${i < value.length ? accent : "#D6CFE2"}`,
+            transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+            transform: i === value.length - 1 ? "scale(1.15)" : "scale(1)",
+          }} />
+        ))}
+      </div>
+      {/* Pavé 3×4 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, maxWidth: 300, margin: "0 auto" }}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+          <button key={n} onClick={() => handleDigit(String(n))} disabled={disabled} style={cellStyle()}>{n}</button>
+        ))}
+        <button onClick={handleBack} disabled={disabled || value.length === 0} style={cellStyle("back")}>←</button>
+        <button onClick={() => handleDigit("0")} disabled={disabled} style={cellStyle()}>0</button>
+        <div />
+      </div>
+    </div>
+  );
+}
+
 export default function Mathiko() {
   // ── 1. ÉTAT ──────────────────────────────────────────────────────────────
   // `phase` = la machine à états qui décide quel écran s'affiche. Valeurs :
@@ -1386,10 +1478,44 @@ export default function Mathiko() {
   // profileScreen / newName / newAvatar = état local de l'écran "profiles".
   const [store, setStore] = useState({ profiles: [], currentProfileId: null });
   const [bootstrapped, setBootstrapped] = useState(false);
-  // sub-screen of the profiles phase: list | create
+  // sub-screen of the profiles phase: list | create  (legacy offline UI, now
+  // unreachable when auth Supabase est active — gardé pour fallback hors ligne).
   const [profileScreen, setProfileScreen] = useState("list");
   const [newName, setNewName] = useState("");
   const [newAvatar, setNewAvatar] = useState(AVATARS[0]);
+
+  // ── Auth Supabase (cloud) ────────────────────────────────────────────────
+  // authPhase pilote l'écran AUTH (qui s'affiche AVANT le jeu) :
+  //   "loading" → bootstrap initial, on lit le localStorage de cet appareil
+  //   "picker"  → écran "Qui joue ?" : liste des refuges connus sur cet
+  //               appareil + boutons "autre refuge" / "créer"
+  //   "login"   → entrée du code à 4 chiffres pour un refuge sélectionné
+  //               (ou pseudo + code en mode "j'ai un autre refuge")
+  //   "create"  → création d'un nouveau refuge (pseudo + avatar + code)
+  //   "authed"  → connectée — le reste de l'app est affiché normalement
+  const [authPhase, setAuthPhase] = useState("loading");
+  // Refuges connus sur cet appareil (juste pseudo + avatar + id Supabase,
+  // JAMAIS le code). Sert à afficher des cartes dans le picker.
+  const [knownUsers, setKnownUsers] = useState([]);
+  // Refuge sélectionné dans le picker → on enchaîne sur l'entrée du code.
+  // null = pas sélectionné (mode manuel : on demandera aussi le pseudo).
+  const [authSelected, setAuthSelected] = useState(null);
+  // Saisie en cours sur les formulaires d'auth.
+  const [authPseudo, setAuthPseudo] = useState("");
+  const [authAvatar, setAuthAvatar] = useState(AVATARS[0]);
+  const [authPin, setAuthPin] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  // Référence persistante : le code de l'utilisat(eur·rice) connecté(e),
+  // gardé EN MÉMOIRE UNIQUEMENT (jamais en localStorage) — il faut le rentrer
+  // à chaque rechargement de page. Utilisé pour les sauvegardes cloud.
+  const pinMemoryRef = useRef(null);
+  // Id Supabase du refuge connecté (uuid). null = pas connecté.
+  const cloudUserIdRef = useRef(null);
+  // Timer pour débouncer les sauvegardes cloud (~2 s).
+  const cloudSaveTimerRef = useRef(null);
+  // Compteur de sauvegardes cloud en cours (pour afficher un petit indicateur).
+  const [cloudSyncState, setCloudSyncState] = useState("idle"); // idle | saving | error
 
   // ── Réglages de la prochaine partie (choisis dans le menu) ──
   // Selected halves: array of strings like ["2-low", "2-high", "3-low", "3-high"]
@@ -1492,35 +1618,177 @@ export default function Mathiko() {
   // Current profile shorthand — le profil actif, ou null si aucun n'est choisi.
   const currentProfile = store.profiles.find(p => p.id === store.currentProfileId) || null;
 
-  // ── 3. EFFETS ────────────────────────────────────────────────────────────
-  // ── Bootstrap: load store + decide initial screen ──────────────────────────
-  // S'exécute UNE fois au montage : charge le localStorage (avec migrations) et
-  // choisit l'écran de départ — création forcée si aucun profil, menu si un
-  // profil était déjà actif, liste des profils sinon.
+  // ── Bootstrap: charger les refuges connus de cet appareil ────────────────
+  // Au montage : on lit la liste des refuges déjà utilisés sur cet appareil
+  // (stockée dans localStorage en clair — JAMAIS le code) pour pré-remplir le
+  // picker. Si supabase n'est pas configuré (env vars manquantes), on tombe
+  // sur l'ancien mode hors-ligne pour ne pas bloquer un dev local.
   useEffect(() => {
-    const s = loadStore();
-    setStore(s);
-    setBootstrapped(true);
-    if (s.profiles.length === 0) {
-      setProfileScreen("create");           // force creation if first launch
-      setPhase("profiles");
-    } else if (s.currentProfileId && s.profiles.find(p => p.id === s.currentProfileId)) {
-      setPhase("menu");                     // jump straight to menu if already known
-    } else {
-      setProfileScreen("list");
-      setPhase("profiles");
+    // Sécurité : si pas de config Supabase, on retombe sur l'ancien mode local.
+    if (!supabase) {
+      const s = loadStore();
+      setStore(s);
+      setBootstrapped(true);
+      setAuthPhase("authed"); // bypass auth pour utiliser l'ancienne UI profils
+      if (s.profiles.length === 0) {
+        setProfileScreen("create");
+        setPhase("profiles");
+      } else if (s.currentProfileId && s.profiles.find(p => p.id === s.currentProfileId)) {
+        setPhase("menu");
+      } else {
+        setProfileScreen("list");
+        setPhase("profiles");
+      }
+      return;
     }
+    // Mode cloud normal : on lit la liste des refuges connus + l'éventuel
+    // refuge actif récemment (pour le placer en premier dans le picker).
+    try {
+      const raw = localStorage.getItem("mathiko_known_users");
+      const list = raw ? JSON.parse(raw) : [];
+      setKnownUsers(Array.isArray(list) ? list : []);
+    } catch { setKnownUsers([]); }
+    setBootstrapped(true);
+    setAuthPhase("picker");
   }, []);
 
   // ── Persist store on change (after bootstrap) ──────────────────────────────
-  // Sauvegarde AUTOMATIQUE : dès que `store` change, on l'écrit dans localStorage.
-  // C'est pour ça qu'ailleurs dans le code on se contente de setStore(...) sans
-  // jamais appeler saveStore() à la main. La garde `bootstrapped` empêche
-  // d'écraser la vraie sauvegarde par le store vide initial.
+  // Sauvegarde AUTOMATIQUE : dès que `store` change, on l'écrit dans localStorage
+  // (cache rapide pour les rendus suivants de la même session) ET on déclenche
+  // une sauvegarde cloud DÉBOUNCÉE à 2 s (pour ne pas spammer Supabase à chaque
+  // touche). La garde `bootstrapped` empêche d'écraser une sauvegarde par le
+  // store vide initial ; la garde `authPhase === "authed"` empêche de pousser
+  // un store vide pendant l'auth.
   useEffect(() => {
     if (!bootstrapped) return;
+    if (authPhase !== "authed") return;
     saveStore(store);
-  }, [store, bootstrapped]);
+    // Cloud save (debounced) — uniquement si on est connecté à Supabase.
+    if (!supabase || !cloudUserIdRef.current || !pinMemoryRef.current) return;
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+    cloudSaveTimerRef.current = setTimeout(async () => {
+      setCloudSyncState("saving");
+      const { data, error } = await supabase.rpc("save_store", {
+        p_id: cloudUserIdRef.current,
+        p_pin: pinMemoryRef.current,
+        p_store: store,
+      });
+      if (error || data === false) {
+        setCloudSyncState("error");
+        // eslint-disable-next-line no-console
+        console.warn("Cloud sync failed", error);
+      } else {
+        setCloudSyncState("idle");
+      }
+    }, 2000);
+    return () => { if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current); };
+  }, [store, bootstrapped, authPhase]);
+
+  // ── Helpers : mémoriser un refuge sur l'appareil ─────────────────────────
+  // Met à jour la liste des refuges connus localement (id + pseudo + avatar).
+  // Le refuge passé en paramètre est mis EN TÊTE (le plus récent en premier).
+  // Code JAMAIS stocké côté localStorage — il vit en mémoire seulement.
+  function rememberUser({ id, pseudo, avatar }) {
+    const newList = [{ id, pseudo, avatar }, ...knownUsers.filter(u => u.id !== id)];
+    setKnownUsers(newList);
+    try { localStorage.setItem("mathiko_known_users", JSON.stringify(newList)); } catch {}
+    try { localStorage.setItem("mathiko_last_active_id", id); } catch {}
+  }
+  function forgetUser(id) {
+    const newList = knownUsers.filter(u => u.id !== id);
+    setKnownUsers(newList);
+    try { localStorage.setItem("mathiko_known_users", JSON.stringify(newList)); } catch {}
+  }
+
+  // ── Connexion à un refuge existant ───────────────────────────────────────
+  async function doLogin(pseudo, pin) {
+    if (!supabase) { setAuthError("Mode cloud non configuré."); return; }
+    setAuthBusy(true); setAuthError("");
+    const { data, error } = await supabase.rpc("login_profile", {
+      p_pseudo: pseudo, p_pin: pin,
+    });
+    setAuthBusy(false);
+    if (error) {
+      setAuthError("Erreur réseau. Réessaie.");
+      setAuthPin("");
+      return;
+    }
+    if (!data || data.length === 0) {
+      setAuthError("Pseudo ou code incorrect.");
+      setAuthPin("");
+      return;
+    }
+    const row = data[0];
+    // row.store peut être l'état initial (juste { createdViaSupabase, pseudo,
+    // avatar }) si le refuge n'a jamais été sauvegardé, OU un vrai store
+    // Mathiko avec profiles[]. On détecte le cas et on construit un profil
+    // frais si nécessaire.
+    let cloudStore = row.store || {};
+    if (!cloudStore.profiles || !Array.isArray(cloudStore.profiles) || cloudStore.profiles.length === 0) {
+      const profile = makeProfile(cloudStore.pseudo || pseudo, cloudStore.avatar || AVATARS[0]);
+      profile.id = row.id; // on calque l'id local sur l'id Supabase
+      cloudStore = { profiles: [profile], currentProfileId: profile.id, version: SCHEMA_VERSION };
+    } else {
+      // Passer par migrate() au cas où le schéma du store cloud serait obsolète.
+      cloudStore = migrate(cloudStore);
+    }
+    // Finalize auth state
+    cloudUserIdRef.current = row.id;
+    pinMemoryRef.current = pin;
+    rememberUser({ id: row.id, pseudo: pseudo, avatar: (cloudStore.profiles[0] && cloudStore.profiles[0].avatar) || AVATARS[0] });
+    setStore(cloudStore);
+    setAuthPhase("authed");
+    setPhase("menu");
+    setAuthPseudo(""); setAuthPin(""); setAuthSelected(null);
+  }
+
+  // ── Création d'un nouveau refuge ─────────────────────────────────────────
+  async function doCreate(pseudo, avatar, pin) {
+    if (!supabase) { setAuthError("Mode cloud non configuré."); return; }
+    setAuthBusy(true); setAuthError("");
+    const { data, error } = await supabase.rpc("create_profile", {
+      p_pseudo: pseudo, p_pin: pin, p_avatar: avatar,
+    });
+    setAuthBusy(false);
+    if (error) {
+      setAuthError(error.message && error.message.includes("pseudo too short")
+        ? "Pseudo trop court (2 caractères minimum)."
+        : "Erreur. Réessaie.");
+      setAuthPin("");
+      return;
+    }
+    if (!data) {
+      setAuthError("Ce pseudo est déjà pris. Choisis-en un autre.");
+      setAuthPin("");
+      return;
+    }
+    // Créer le profil local et l'enchaîner.
+    const profile = makeProfile(pseudo, avatar);
+    profile.id = data; // uuid Supabase
+    const newStore = { profiles: [profile], currentProfileId: profile.id, version: SCHEMA_VERSION };
+    cloudUserIdRef.current = data;
+    pinMemoryRef.current = pin;
+    rememberUser({ id: data, pseudo, avatar });
+    setStore(newStore);
+    setAuthPhase("authed");
+    setPhase("menu");
+    setAuthPseudo(""); setAuthAvatar(AVATARS[0]); setAuthPin("");
+  }
+
+  // ── Déconnexion (« Changer de refuge ») ──────────────────────────────────
+  function doLogout() {
+    // Annule toute sauvegarde cloud en attente.
+    if (cloudSaveTimerRef.current) {
+      clearTimeout(cloudSaveTimerRef.current);
+      cloudSaveTimerRef.current = null;
+    }
+    pinMemoryRef.current = null;
+    cloudUserIdRef.current = null;
+    setStore({ profiles: [], currentProfileId: null });
+    setAuthPhase("picker");
+    setAuthSelected(null); setAuthPseudo(""); setAuthPin(""); setAuthError("");
+    setPhase("menu"); // remettra l'utilisat(eur·rice) sur le picker via le routeur AUTH
+  }
 
   // Quand l'utilisateur ouvre le Zoodex, on laisse les animations de nouveautés
   // jouer puis on les efface après ~1,5 s pour ne pas les rejouer à la visite
@@ -2236,6 +2504,233 @@ export default function Mathiko() {
   const totalVeggie = plants.length + foods.length;
   const veggieLast  = totalVeggie > 0 ? Math.min((totalVeggie - 1) * VEGGIE_STEP, VEGGIE_CAP) : 0;
   const junkBase    = veggieBase + (totalVeggie > 0 ? veggieLast + SECTION_GAP : 0);
+
+  // ── Rendu de l'écran d'AUTH (picker / login / create) ────────────────────
+  // Retour anticipé : tant que authPhase !== "authed", on n'entre PAS dans le
+  // jeu — on affiche l'écran d'auth dans le même wrapper visuel que le jeu
+  // (mêmes couleurs, même feuille de styles, pour la transition douce).
+  if (supabase && authPhase !== "authed") {
+    const wrapper = {
+      minHeight: "100vh",
+      background: "linear-gradient(135deg, #FFF5F8 0%, #F4F0FF 50%, #FFF8E8 100%)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: '"Comic Sans MS", "Chalkboard SE", system-ui, sans-serif',
+      padding: 16,
+    };
+    const cardSt = {
+      background: "white", borderRadius: 24, padding: 26,
+      boxShadow: "0 18px 40px rgba(74,64,99,0.18)",
+      maxWidth: 420, width: "100%",
+      textAlign: "center",
+    };
+    const titleSt = { fontSize: 22, fontWeight: 800, color: "#4A4063", marginBottom: 4 };
+    const subtitleSt = { fontSize: 13, color: "#9B8FAE", marginBottom: 22 };
+    const errSt = { color: "#D85070", fontSize: 13, fontWeight: 700, marginTop: 14, minHeight: 18 };
+    const linkSt = {
+      background: "transparent", border: "none", color: "#9B8FAE",
+      fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+      padding: "8px 12px", textDecoration: "underline",
+    };
+    const primaryBtn = (color = "#7BC9A0", shadow = "rgba(123,201,160,0.4)") => ({
+      background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+      color: "white", border: "none", borderRadius: 50,
+      padding: "11px 22px", fontSize: 15, fontWeight: 800,
+      cursor: "pointer", fontFamily: "inherit",
+      boxShadow: `0 4px 14px ${shadow}`,
+    });
+    const pseudoInput = (
+      <input
+        type="text"
+        autoCapitalize="words"
+        autoCorrect="off"
+        spellCheck={false}
+        maxLength={20}
+        placeholder="Ton pseudo"
+        value={authPseudo}
+        onChange={e => { setAuthPseudo(e.target.value); setAuthError(""); }}
+        style={{
+          width: "100%", maxWidth: 280, boxSizing: "border-box",
+          padding: "11px 16px", fontSize: 16, fontFamily: "inherit",
+          textAlign: "center", borderRadius: 16,
+          border: "2px solid #D6CFE2", background: "white", color: "#4A4063",
+          outline: "none", marginBottom: 14,
+        }}
+      />
+    );
+    return (
+      <div style={wrapper}>
+        <style>{`
+          @keyframes mk-fade-auth { from {opacity:0;} to {opacity:1;} }
+          .mk-fade-auth { animation: mk-fade-auth 0.25s ease both; }
+        `}</style>
+        <div style={cardSt} className="mk-fade-auth">
+          {authPhase === "picker" && (
+            <>
+              <div style={{ fontSize: 38, marginBottom: 6 }}>🐱</div>
+              <div style={titleSt}>Mathiko Zoo</div>
+              <div style={subtitleSt}>Connecte-toi à ton refuge</div>
+              {knownUsers.length > 0 ? (
+                <>
+                  <div style={{ fontSize: 12, color: "#9B8FAE", fontWeight: 700, marginBottom: 10, textAlign: "left" }}>
+                    Refuges connus sur cet appareil :
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                    {knownUsers.map(u => (
+                      <div key={u.id} style={{
+                        display: "flex", alignItems: "center", gap: 12,
+                        padding: 10, borderRadius: 16,
+                        background: "#FAF7FF", border: "2px solid #EDE5F5",
+                      }}>
+                        <button onClick={() => {
+                          setAuthSelected(u); setAuthPseudo(u.pseudo);
+                          setAuthPin(""); setAuthError("");
+                          setAuthPhase("login");
+                        }} style={{
+                          flex: 1, display: "flex", alignItems: "center", gap: 12,
+                          background: "transparent", border: "none", padding: 4,
+                          fontFamily: "inherit", cursor: "pointer", textAlign: "left",
+                        }}>
+                          <span style={{ fontSize: 28 }}>{u.avatar}</span>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: "#4A4063" }}>{u.pseudo}</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Retirer le refuge « ${u.pseudo} » de cet appareil ?\n(Le refuge n'est pas supprimé, juste retiré de la liste rapide.)`)) {
+                              forgetUser(u.id);
+                            }
+                          }}
+                          title="Retirer de cet appareil"
+                          style={{
+                            background: "transparent", border: "none", color: "#C4B8D4",
+                            fontSize: 16, cursor: "pointer", padding: "4px 8px",
+                          }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: "#9B8FAE", marginBottom: 18, lineHeight: 1.4 }}>
+                  Première fois sur cet appareil ? Crée ton refuge ou connecte-toi avec ton pseudo.
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setAuthPseudo(""); setAuthAvatar(AVATARS[0]); setAuthPin(""); setAuthError("");
+                  setAuthPhase("create");
+                }}
+                style={primaryBtn()}
+              >
+                ✨ Créer un nouveau refuge
+              </button>
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setAuthSelected(null); setAuthPseudo(""); setAuthPin(""); setAuthError("");
+                    setAuthPhase("login");
+                  }}
+                  style={linkSt}
+                >
+                  J'ai un refuge sur un autre appareil
+                </button>
+              </div>
+            </>
+          )}
+          {authPhase === "login" && (
+            <>
+              {authSelected ? (
+                <>
+                  <div style={{ fontSize: 48, marginBottom: 4 }}>{authSelected.avatar}</div>
+                  <div style={titleSt}>Salut, {authSelected.pseudo} !</div>
+                  <div style={subtitleSt}>Entre ton code à 4 chiffres</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 38, marginBottom: 6 }}>🔑</div>
+                  <div style={titleSt}>Reconnecte-toi</div>
+                  <div style={subtitleSt}>Pseudo et code à 4 chiffres</div>
+                  {pseudoInput}
+                </>
+              )}
+              <PinPad
+                value={authPin}
+                onChange={v => { setAuthPin(v); setAuthError(""); }}
+                onSubmit={pin => doLogin(authPseudo, pin)}
+                disabled={authBusy || (!authSelected && authPseudo.trim().length < 2)}
+              />
+              <div style={errSt}>{authError}</div>
+              <div style={{ marginTop: 14 }}>
+                <button
+                  onClick={() => {
+                    setAuthSelected(null); setAuthPin(""); setAuthError("");
+                    setAuthPhase("picker");
+                  }}
+                  style={linkSt}
+                >
+                  ← Retour
+                </button>
+              </div>
+            </>
+          )}
+          {authPhase === "create" && (
+            <>
+              <div style={{ fontSize: 38, marginBottom: 6 }}>✨</div>
+              <div style={titleSt}>Crée ton refuge</div>
+              <div style={subtitleSt}>Choisis un pseudo, un avatar et un code à 4 chiffres</div>
+              {pseudoInput}
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6,
+                marginBottom: 18, maxWidth: 280, marginLeft: "auto", marginRight: "auto",
+              }}>
+                {AVATARS.map(a => (
+                  <button key={a} onClick={() => setAuthAvatar(a)} style={{
+                    fontSize: 24, padding: "8px 0",
+                    background: authAvatar === a ? "#FFE17A" : "white",
+                    border: `2px solid ${authAvatar === a ? "#FFB347" : "#D6CFE2"}`,
+                    borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                  }}>{a}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: "#9B8FAE", fontWeight: 700, marginBottom: 10 }}>
+                Code à 4 chiffres (à retenir !)
+              </div>
+              <PinPad
+                value={authPin}
+                onChange={v => { setAuthPin(v); setAuthError(""); }}
+                onSubmit={pin => {
+                  if (authPseudo.trim().length < 2) {
+                    setAuthError("Pseudo trop court (2 caractères minimum).");
+                    return;
+                  }
+                  doCreate(authPseudo.trim(), authAvatar, pin);
+                }}
+                disabled={authBusy || authPseudo.trim().length < 2}
+              />
+              <div style={errSt}>{authError}</div>
+              <div style={{ marginTop: 14 }}>
+                <button
+                  onClick={() => {
+                    setAuthPseudo(""); setAuthAvatar(AVATARS[0]); setAuthPin(""); setAuthError("");
+                    setAuthPhase("picker");
+                  }}
+                  style={linkSt}
+                >
+                  ← Retour
+                </button>
+              </div>
+            </>
+          )}
+          {authPhase === "loading" && (
+            <>
+              <div style={{ fontSize: 38, marginBottom: 6 }}>🐱</div>
+              <div style={titleSt}>Mathiko Zoo</div>
+              <div style={subtitleSt}>Un instant…</div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ─── 6. RENDU ───────────────────────────────────────────────────────────────
   // Un unique <div> conteneur, puis une longue suite de blocs conditionnels
@@ -3349,8 +3844,8 @@ export default function Mathiko() {
                 })()}
               </div>
               <button
-                onClick={switchProfile}
-                title="Changer de profil"
+                onClick={supabase ? doLogout : switchProfile}
+                title={supabase ? "Changer de refuge" : "Changer de profil"}
                 style={{
                   background: "white", border: "2px solid #FFCEDB",
                   borderRadius: 14, padding: "5px 10px",
