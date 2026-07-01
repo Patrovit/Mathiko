@@ -155,6 +155,20 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v25 · 2026-05-24 · feat  · VERSION 2.28.0-dev
+        Ajout de la réponse tapée en petit, discret, en italique
+        (« tu avais dit X ») sous l'équation dans la carte de feedback,
+        uniquement en cas d'erreur ET quand la joueuse(eur) a effectivement
+        tapé quelque chose (pas affiché sur un timeout où le champ est vide).
+        Aide à distinguer une vraie erreur d'une faute de frappe sans
+        marquer visuellement l'échec par un ton neutre.
+
+        (Note historique : le bloc pédagogique complet — équation en grand,
+        grille de l'avatar en `a` lignes × `b` colonnes avec groupement par
+        3/4, décompositions équivalentes filtrées dans [2..9]² avec dédup
+        commutative — était déjà présent dans le dev depuis une itération
+        antérieure sans entrée dans ce CHANGELOG. Cette entrée v25 documente
+        la seule modification effective : le rappel de la réponse tapée.)
    v24 · 2026-05-24 · fix   · VERSION 2.28.0-dev
         Ensemble de finitions :
           — Messages d'erreur RPC nettoyés (génériques côté UI, détail complet
@@ -399,7 +413,7 @@ const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 24; // révision de fichier — voir CHANGELOG
+const REVISION = 25; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -5325,12 +5339,106 @@ export default function Mathiko() {
             : "linear-gradient(135deg, rgba(255,154,168,0.97), rgba(255,124,148,0.97))",
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
         }}>
-          <div className={fb.ok ? "mk-pop" : "mk-wiggle"} style={{ fontSize: 70, lineHeight: 1 }}>
+          <div className={fb.ok ? "mk-pop" : "mk-wiggle"} style={{ fontSize: 60, lineHeight: 1 }}>
             {fb.cat}
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: "white", textShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
             {fb.label}
           </div>
+
+          {/* ── Bloc pédagogique : équation en grand + grille visuelle du
+              produit + décomposition en autres groupements équivalents.
+              TOUJOURS affiché (succès comme erreur) — l'idée étant que la
+              carte d'erreur soit une occasion d'apprendre autant que la
+              carte de succès une occasion de renforcer. Le mauvais résultat
+              tapé par la joueuse(eur) n'est PAS affiché — inutile de
+              marquer visuellement l'erreur. */}
+          {(() => {
+            const { a, b, ans } = fb.q;
+            const total = ans;
+            const maxDim = Math.max(a, b);
+            // Taille auto de l'emoji : décroît avec le max des dimensions.
+            const emojiSize = maxDim >= 8 ? 15 : maxDim >= 6 ? 19 : maxDim >= 4 ? 24 : 28;
+            // Groupement visuel par 4 (préféré) ou 3 quand la dimension est
+            // divisible, aide la lecture "en paquets" plutôt qu'en file.
+            const groupSize = n => (n >= 4 && n % 4 === 0) ? 4 : (n >= 3 && n % 3 === 0) ? 3 : 0;
+            const colGroup = groupSize(b);
+            const rowGroup = groupSize(a);
+            const avatar = (currentProfile && currentProfile.avatar) || "🐾";
+
+            // Décompositions équivalentes : (a', b') avec 2 ≤ a', b' ≤ 9,
+            // dédupliquées par commutativité (on ne montre pas 3×8 ET 8×3)
+            // et hors calcul en cours. On les rend en "gros × petit" pour
+            // varier la perception vs l'écriture naturelle du calcul.
+            const decompositions = [];
+            const currCanon = a <= b ? [a, b] : [b, a];
+            for (let a2 = 2; a2 <= 9; a2++) {
+              for (let b2 = a2; b2 <= 9; b2++) {
+                if (a2 * b2 !== total) continue;
+                if (a2 === currCanon[0] && b2 === currCanon[1]) continue;
+                decompositions.push([b2, a2]); // gros × petit
+              }
+            }
+            const decoText = "Il y en a " + total + ", " + a + " groupes de " + b
+              + decompositions.map(d => " ou " + d[0] + " groupes de " + d[1]).join("");
+
+            return (
+              <>
+                <div style={{
+                  fontSize: 26, fontWeight: 800, color: "white", marginTop: 2,
+                  textShadow: "0 2px 8px rgba(0,0,0,0.18)", lineHeight: 1,
+                }}>
+                  {a} × {b} = {ans}
+                </div>
+                {/* Rappel de la réponse tapée en cas d'erreur — petit et
+                    discret, ton neutre, pour aider à distinguer une vraie
+                    erreur d'une faute de frappe sans marquer visuellement
+                    l'échec. Rien de tel pour un timeout où l'enfant n'a
+                    rien tapé (userAns vide). */}
+                {!fb.ok && fb.userAns && (
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.75)",
+                    fontStyle: "italic", marginTop: -2,
+                    textShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                  }}>
+                    (tu avais dit {fb.userAns})
+                  </div>
+                )}
+                <div style={{
+                  background: "rgba(255,255,255,0.20)",
+                  borderRadius: 14,
+                  padding: "10px 14px",
+                  marginTop: 4,
+                  display: "inline-flex", flexDirection: "column",
+                  alignItems: "center",
+                }}>
+                  {Array.from({ length: a }).map((_, i) => (
+                    <React.Fragment key={"r" + i}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                        {Array.from({ length: b }).map((_, j) => (
+                          <React.Fragment key={"c" + j}>
+                            <span style={{ fontSize: emojiSize, lineHeight: 1, display: "inline-block" }}>{avatar}</span>
+                            {colGroup > 0 && (j + 1) % colGroup === 0 && j + 1 < b && (
+                              <span style={{ display: "inline-block", width: emojiSize * 0.4 }} />
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                      {rowGroup > 0 && (i + 1) % rowGroup === 0 && i + 1 < a && (
+                        <div style={{ height: emojiSize * 0.4 }} />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div style={{
+                  fontSize: 12, color: "white", fontWeight: 700, marginTop: 4,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1.3, maxWidth: 340,
+                }}>
+                  {decoText}
+                </div>
+              </>
+            );
+          })()}
 
           {fb.ok ? (
             <>
@@ -5340,14 +5448,14 @@ export default function Mathiko() {
                   à se situer dans le défi zéro-erreur. */}
               {fb.gAnimal ? (
                 <div className="mk-bounce" style={{
-                  fontSize: 60, lineHeight: 1, marginTop: 4,
+                  fontSize: 50, lineHeight: 1, marginTop: 6,
                   filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))",
                 }}>{fb.gAnimal.emoji}</div>
               ) : gameMode === "welcome" ? (
                 <div style={{
-                  marginTop: 6, fontSize: 22, fontWeight: 800, color: "white",
+                  marginTop: 6, fontSize: 20, fontWeight: 800, color: "white",
                   background: "rgba(255,255,255,0.22)",
-                  borderRadius: 16, padding: "6px 18px",
+                  borderRadius: 16, padding: "4px 16px",
                   textShadow: "0 2px 8px rgba(0,0,0,0.15)",
                 }}>
                   ✓ {qi + 1} / {qs.length}
@@ -5357,16 +5465,16 @@ export default function Mathiko() {
               {fb.cLabel && (
                 <>
                   <div style={{
-                    marginTop: 4, fontSize: 13, fontWeight: 800, color: "white",
+                    marginTop: 2, fontSize: 12, fontWeight: 800, color: "white",
                     background: "rgba(255,255,255,0.22)",
-                    borderRadius: 16, padding: "4px 14px",
+                    borderRadius: 16, padding: "3px 12px",
                   }}>{fb.cLabel}</div>
 
                   {(fb.gPlants.length > 0 || fb.gFoods.length > 0) && (
-                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", justifyContent: "center", maxWidth: 360 }}>
+                    <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", justifyContent: "center", maxWidth: 360 }}>
                       {[...fb.gPlants, ...fb.gFoods].map((em, i) => (
                         <span key={i} className="mk-spin" style={{
-                          fontSize: 32, display: "inline-block",
+                          fontSize: 26, display: "inline-block",
                           animationDelay: `${i * 0.08}s`,
                         }}>{em}</span>
                       ))}
@@ -5375,12 +5483,12 @@ export default function Mathiko() {
 
                   {fb.gKeepers && fb.gKeepers.length > 0 && (
                     <div style={{
-                      display: "flex", gap: 6, marginTop: 6,
+                      display: "flex", gap: 6, marginTop: 4,
                       flexWrap: "wrap", justifyContent: "center", maxWidth: 360,
                     }}>
                       {fb.gKeepers.map((k, i) => (
                         <span key={i} className="mk-bounce" style={{
-                          fontSize: 44, display: "inline-block",
+                          fontSize: 36, display: "inline-block",
                           animationDelay: `${i * 0.12}s`,
                           filter: "drop-shadow(0 4px 14px rgba(255,210,80,0.7))",
                         }}>{k}</span>
@@ -5392,19 +5500,18 @@ export default function Mathiko() {
             </>
           ) : (
             <>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "white", marginTop: 4 }}>
-                {fb.q.a} × {fb.q.b} =
-              </div>
-              <div style={{ fontSize: 44, fontWeight: 800, color: "white", lineHeight: 1, textShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
-                {fb.q.ans}
-              </div>
-              <div className="mk-drop" style={{
-                fontSize: 40, marginTop: 4,
-                filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.2))",
-              }}>{fb.gJunk}</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 }}>
-                {fb.isTimeout ? "⏰ Temps écoulé" : `Tu as mis ${fb.userAns}`}
-              </div>
+              {/* Sur erreur : petit clin d'œil visuel (junk emoji) discret,
+                  pas de rappel de la réponse tapée par la joueuse(eur). */}
+              {fb.isTimeout ? (
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 }}>
+                  ⏰ Temps écoulé
+                </div>
+              ) : (
+                <div className="mk-drop" style={{
+                  fontSize: 28, marginTop: 2,
+                  filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.2))",
+                }}>{fb.gJunk}</div>
+              )}
             </>
           )}
 
