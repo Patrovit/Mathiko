@@ -155,6 +155,22 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v26 · 2026-05-24 · feat  · VERSION 2.28.0-dev
+        Refonte de l'ordre de la carte de feedback pour un meilleur flow
+        pédagogique : Emoji chat → Commentaire → Animal gagné / consolation
+        d'erreur → Équation → (Tu avais dit X) → Matrice emojis → Compte-les
+        → Bouton Suivant. La récompense émotionnelle (animal + combos) passe
+        AVANT le contenu didactique.
+        Groupement de la matrice : ajout d'un 3e niveau. Priorités :
+          ・ multiple de 4 ET n > 4 → groupes de 4 (ex. n=8 → 4+4)
+          ・ multiple de 3          → groupes de 3 (ex. n=6 → 3+3, n=9 → 3+3+3)
+          ・ multiple de 2 ET n ≥ 4 → groupes de 2 (ex. n=4 → 2+2)
+        Sinon pas de séparateur (n=5, n=7). Le "n > 4" pour ÷4 évite qu'on
+        segmente 4 emojis en un seul groupe de 4 (aucun séparateur produit).
+        Matrice réduite (25 % plus petite) pour laisser la place à la
+        récompense au-dessus sans faire déborder la carte.
+        Texte de comptage : « Compte-les, il y en a X, ... ! » (nouveau
+        préfixe injonctif + point d'exclamation).
    v25 · 2026-05-24 · feat  · VERSION 2.28.0-dev
         Ajout de la réponse tapée en petit, discret, en italique
         (« tu avais dit X ») sous l'équation dans la carte de feedback,
@@ -413,7 +429,7 @@ const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 25; // révision de fichier — voir CHANGELOG
+const REVISION = 26; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -5339,121 +5355,31 @@ export default function Mathiko() {
             : "linear-gradient(135deg, rgba(255,154,168,0.97), rgba(255,124,148,0.97))",
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
         }}>
+          {/* 1. Emoji chat (réaction) */}
           <div className={fb.ok ? "mk-pop" : "mk-wiggle"} style={{ fontSize: 60, lineHeight: 1 }}>
             {fb.cat}
           </div>
+
+          {/* 2. Commentaire (Bravo / Oups) */}
           <div style={{ fontSize: 22, fontWeight: 800, color: "white", textShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
             {fb.label}
           </div>
 
-          {/* ── Bloc pédagogique : équation en grand + grille visuelle du
-              produit + décomposition en autres groupements équivalents.
-              TOUJOURS affiché (succès comme erreur) — l'idée étant que la
-              carte d'erreur soit une occasion d'apprendre autant que la
-              carte de succès une occasion de renforcer. Le mauvais résultat
-              tapé par la joueuse(eur) n'est PAS affiché — inutile de
-              marquer visuellement l'erreur. */}
-          {(() => {
-            const { a, b, ans } = fb.q;
-            const total = ans;
-            const maxDim = Math.max(a, b);
-            // Taille auto de l'emoji : décroît avec le max des dimensions.
-            const emojiSize = maxDim >= 8 ? 15 : maxDim >= 6 ? 19 : maxDim >= 4 ? 24 : 28;
-            // Groupement visuel par 4 (préféré) ou 3 quand la dimension est
-            // divisible, aide la lecture "en paquets" plutôt qu'en file.
-            const groupSize = n => (n >= 4 && n % 4 === 0) ? 4 : (n >= 3 && n % 3 === 0) ? 3 : 0;
-            const colGroup = groupSize(b);
-            const rowGroup = groupSize(a);
-            const avatar = (currentProfile && currentProfile.avatar) || "🐾";
-
-            // Décompositions équivalentes : (a', b') avec 2 ≤ a', b' ≤ 9,
-            // dédupliquées par commutativité (on ne montre pas 3×8 ET 8×3)
-            // et hors calcul en cours. On les rend en "gros × petit" pour
-            // varier la perception vs l'écriture naturelle du calcul.
-            const decompositions = [];
-            const currCanon = a <= b ? [a, b] : [b, a];
-            for (let a2 = 2; a2 <= 9; a2++) {
-              for (let b2 = a2; b2 <= 9; b2++) {
-                if (a2 * b2 !== total) continue;
-                if (a2 === currCanon[0] && b2 === currCanon[1]) continue;
-                decompositions.push([b2, a2]); // gros × petit
-              }
-            }
-            const decoText = "Il y en a " + total + ", " + a + " groupes de " + b
-              + decompositions.map(d => " ou " + d[0] + " groupes de " + d[1]).join("");
-
-            return (
-              <>
-                <div style={{
-                  fontSize: 26, fontWeight: 800, color: "white", marginTop: 2,
-                  textShadow: "0 2px 8px rgba(0,0,0,0.18)", lineHeight: 1,
-                }}>
-                  {a} × {b} = {ans}
-                </div>
-                {/* Rappel de la réponse tapée en cas d'erreur — petit et
-                    discret, ton neutre, pour aider à distinguer une vraie
-                    erreur d'une faute de frappe sans marquer visuellement
-                    l'échec. Rien de tel pour un timeout où l'enfant n'a
-                    rien tapé (userAns vide). */}
-                {!fb.ok && fb.userAns && (
-                  <div style={{
-                    fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.75)",
-                    fontStyle: "italic", marginTop: -2,
-                    textShadow: "0 1px 3px rgba(0,0,0,0.15)",
-                  }}>
-                    (tu avais dit {fb.userAns})
-                  </div>
-                )}
-                <div style={{
-                  background: "rgba(255,255,255,0.20)",
-                  borderRadius: 14,
-                  padding: "10px 14px",
-                  marginTop: 4,
-                  display: "inline-flex", flexDirection: "column",
-                  alignItems: "center",
-                }}>
-                  {Array.from({ length: a }).map((_, i) => (
-                    <React.Fragment key={"r" + i}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                        {Array.from({ length: b }).map((_, j) => (
-                          <React.Fragment key={"c" + j}>
-                            <span style={{ fontSize: emojiSize, lineHeight: 1, display: "inline-block" }}>{avatar}</span>
-                            {colGroup > 0 && (j + 1) % colGroup === 0 && j + 1 < b && (
-                              <span style={{ display: "inline-block", width: emojiSize * 0.4 }} />
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </div>
-                      {rowGroup > 0 && (i + 1) % rowGroup === 0 && i + 1 < a && (
-                        <div style={{ height: emojiSize * 0.4 }} />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-                <div style={{
-                  fontSize: 12, color: "white", fontWeight: 700, marginTop: 4,
-                  textShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1.3, maxWidth: 340,
-                }}>
-                  {decoText}
-                </div>
-              </>
-            );
-          })()}
-
+          {/* 3. Visuel de récompense (succès) OU de consolation (erreur) —
+              vient AVANT le bloc pédagogique pour privilégier l'émotion
+              immédiate ; le calcul et la matrice arrivent ensuite. */}
           {fb.ok ? (
             <>
-              {/* Mode normal : l'animal sauvé en grand. Mode welcome : pas
-                  d'animal de session (la récompense arrive à la fin), juste
-                  un indicateur de progression « X / 10 » pour aider l'enfant
-                  à se situer dans le défi zéro-erreur. */}
+              {/* Animal sauvé en grand (mode normal), ou indicateur X/10
+                  (mode accueil qui n'a pas de récompense session). */}
               {fb.gAnimal ? (
                 <div className="mk-bounce" style={{
-                  fontSize: 50, lineHeight: 1, marginTop: 6,
+                  fontSize: 50, lineHeight: 1, marginTop: 4,
                   filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.2))",
                 }}>{fb.gAnimal.emoji}</div>
               ) : gameMode === "welcome" ? (
                 <div style={{
-                  marginTop: 6, fontSize: 20, fontWeight: 800, color: "white",
+                  marginTop: 4, fontSize: 20, fontWeight: 800, color: "white",
                   background: "rgba(255,255,255,0.22)",
                   borderRadius: 16, padding: "4px 16px",
                   textShadow: "0 2px 8px rgba(0,0,0,0.15)",
@@ -5462,6 +5388,7 @@ export default function Mathiko() {
                 </div>
               ) : null}
 
+              {/* Combo + récompenses associées. */}
               {fb.cLabel && (
                 <>
                   <div style={{
@@ -5499,9 +5426,10 @@ export default function Mathiko() {
               )}
             </>
           ) : (
+            /* Erreur : petit visuel discret (junk emoji) OU indicateur
+               de temps écoulé. Rappel de la réponse tapée déplacé sous
+               l'équation dans le bloc pédagogique ci-dessous. */
             <>
-              {/* Sur erreur : petit clin d'œil visuel (junk emoji) discret,
-                  pas de rappel de la réponse tapée par la joueuse(eur). */}
               {fb.isTimeout ? (
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 }}>
                   ⏰ Temps écoulé
@@ -5515,6 +5443,110 @@ export default function Mathiko() {
             </>
           )}
 
+          {/* 4-7. Bloc pédagogique : équation, rappel de la réponse tapée
+              (si erreur), matrice visuelle du produit, décomposition en
+              groupements équivalents. Le bloc entier ne contient que du
+              contenu didactique, isolé du visuel de récompense au-dessus. */}
+          {(() => {
+            const { a, b, ans } = fb.q;
+            const total = ans;
+            const maxDim = Math.max(a, b);
+            // Taille auto de l'emoji — un cran plus petit que la version
+            // précédente pour laisser plus de place à la récompense
+            // au-dessus et rester lisible même sur mobile étroit.
+            const emojiSize = maxDim >= 8 ? 11 : maxDim >= 6 ? 14 : maxDim >= 4 ? 18 : 22;
+            // Groupement visuel — 3 niveaux, pris dans cet ordre :
+            //   ・ multiple de 4 ET n > 4  → groupes de 4 (ex. n=8 → 4+4)
+            //   ・ multiple de 3          → groupes de 3 (ex. n=6 → 3+3, n=9 → 3+3+3)
+            //   ・ multiple de 2 ET n ≥ 4 → groupes de 2 (ex. n=4 → 2+2)
+            // Sinon pas de séparateur. Le "n > 4" pour le cas ÷4 évite
+            // qu'on demande à séparer 4 en un unique groupe de 4 (inutile).
+            const groupSize = n => {
+              if (n > 4 && n % 4 === 0) return 4;
+              if (n % 3 === 0 && n >= 3) return 3;
+              if (n % 2 === 0 && n >= 4) return 2;
+              return 0;
+            };
+            const colGroup = groupSize(b);
+            const rowGroup = groupSize(a);
+            const avatar = (currentProfile && currentProfile.avatar) || "🐾";
+
+            // Décompositions équivalentes : (a', b') avec 2 ≤ a', b' ≤ 9,
+            // dédupliquées par commutativité (on ne montre pas 3×8 ET 8×3)
+            // et hors calcul en cours. Rendues en "gros × petit".
+            const decompositions = [];
+            const currCanon = a <= b ? [a, b] : [b, a];
+            for (let a2 = 2; a2 <= 9; a2++) {
+              for (let b2 = a2; b2 <= 9; b2++) {
+                if (a2 * b2 !== total) continue;
+                if (a2 === currCanon[0] && b2 === currCanon[1]) continue;
+                decompositions.push([b2, a2]);
+              }
+            }
+            const decoText = "Compte-les, il y en a " + total + ", " + a + " groupes de " + b
+              + decompositions.map(d => " ou " + d[0] + " groupes de " + d[1]).join("") + " !";
+
+            return (
+              <>
+                {/* 4. Calcul et réponse (équation en grand) */}
+                <div style={{
+                  fontSize: 26, fontWeight: 800, color: "white", marginTop: 4,
+                  textShadow: "0 2px 8px rgba(0,0,0,0.18)", lineHeight: 1,
+                }}>
+                  {a} × {b} = {ans}
+                </div>
+
+                {/* 5. « Tu avais dit X » — uniquement si erreur ET qqch de tapé */}
+                {!fb.ok && fb.userAns && (
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.75)",
+                    fontStyle: "italic", marginTop: -2,
+                    textShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                  }}>
+                    (tu avais dit {fb.userAns})
+                  </div>
+                )}
+
+                {/* 6. Matrice emojis (grille visuelle du produit) */}
+                <div style={{
+                  background: "rgba(255,255,255,0.20)",
+                  borderRadius: 14,
+                  padding: "8px 12px",
+                  marginTop: 2,
+                  display: "inline-flex", flexDirection: "column",
+                  alignItems: "center",
+                }}>
+                  {Array.from({ length: a }).map((_, i) => (
+                    <React.Fragment key={"r" + i}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        {Array.from({ length: b }).map((_, j) => (
+                          <React.Fragment key={"c" + j}>
+                            <span style={{ fontSize: emojiSize, lineHeight: 1, display: "inline-block" }}>{avatar}</span>
+                            {colGroup > 0 && (j + 1) % colGroup === 0 && j + 1 < b && (
+                              <span style={{ display: "inline-block", width: emojiSize * 0.45 }} />
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                      {rowGroup > 0 && (i + 1) % rowGroup === 0 && i + 1 < a && (
+                        <div style={{ height: emojiSize * 0.45 }} />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+
+                {/* 7. « Compte-les, il y en a X, ... » */}
+                <div style={{
+                  fontSize: 12, color: "white", fontWeight: 700, marginTop: 4,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1.3, maxWidth: 340,
+                }}>
+                  {decoText}
+                </div>
+              </>
+            );
+          })()}
+
+          {/* 8. Bouton Suivant */}
           <button
             onClick={advance}
             ref={el => {
