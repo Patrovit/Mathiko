@@ -155,6 +155,24 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY)
    compte les écritures, qu'elles soient dev ou prod.
 
    ── Historique ──────────────────────────────────────────────────────────────
+   v28 · 2026-05-24 · feat  · VERSION 2.28.0-dev
+        Nouvelle section « Refuges des copains » dans l'écran Records :
+        liste sociale de tous les refuges Supabase, triés par dernière
+        activité (plus récent en tête), avec pseudo, avatar, temps relatif
+        (« il y a 3 min », « il y a 2 jours ») et série de jours d'affilée.
+        Le refuge courant est inclus et surligné avec un fond crème et un
+        marqueur « (c'est toi) ». Choix produit explicites : liste toujours
+        fraîche (fetch à chaque ouverture, pas de cache), pas de métriques
+        compétitives (pas de best time / accuracy / classement), présentation
+        sobre en liste (pas de cartes). Nouvelle RPC Supabase
+        `list_active_profiles` requise côté serveur (voir SQL admin).
+        Helper `timeAgo(iso)` ajouté au niveau module pour la mise en forme
+        du temps relatif en français.
+   v27 · 2026-05-24 · fix   · VERSION 2.28.0-dev
+        Saut de ligne dans la ligne de comptage : le total et la liste des
+        groupements sont maintenant sur deux lignes séparées pour la
+        lisibilité — « Compte-les, il y en a 24, » sur la première ligne, puis
+        « 4 groupes de 6 ou 8 groupes de 3 ! » sur la seconde.
    v26 · 2026-05-24 · feat  · VERSION 2.28.0-dev
         Refonte de l'ordre de la carte de feedback pour un meilleur flow
         pédagogique : Emoji chat → Commentaire → Animal gagné / consolation
@@ -429,7 +447,7 @@ const VERSION = "2.28.0-dev"; // version produit (semver) — voir CHANGELOG
 // du fichier, même sans changement produit (doc, refactor, chore). C'est le
 // grain le plus fin du versionnage : il correspond au « N » du nom de fichier
 // mathiko_vN.jsx et il est affiché dans l'écran debug. Voir le bloc CHANGELOG.
-const REVISION = 26; // révision de fichier — voir CHANGELOG
+const REVISION = 28; // révision de fichier — voir CHANGELOG
 // MAX_T = temps maximum (en secondes) accordé pour répondre à un calcul.
 // Au-delà, handleSubmit(true) est appelé automatiquement (timeout). Sert aussi
 // à calculer la largeur de la barre de temps qui se vide à l'écran.
@@ -1540,6 +1558,23 @@ function PinPad({ value, onChange, onSubmit, maxLength = 4, disabled = false, ac
   );
 }
 
+// ─── timeAgo ───────────────────────────────────────────────────────────────
+// Rendu "temps écoulé" en français pour l'écran Records / Refuges des copains.
+// Renvoie des expressions courtes ("il y a 3 min", "il y a 2 j"). Sert
+// uniquement à l'affichage social, pas à des calculs.
+function timeAgo(iso, now = Date.now()) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const s = Math.max(0, Math.floor((now - t) / 1000));
+  if (s < 60)       return "à l'instant";
+  if (s < 3600)     return "il y a " + Math.floor(s / 60) + " min";
+  if (s < 86400)    return "il y a " + Math.floor(s / 3600) + " h";
+  if (s < 604800)   { const d = Math.floor(s / 86400);  return "il y a " + d + " jour" + (d > 1 ? "s" : ""); }
+  if (s < 2592000)  { const w = Math.floor(s / 604800); return "il y a " + w + " sem" + (w > 1 ? ".": ""); }
+  const mo = Math.floor(s / 2592000);
+  return "il y a " + mo + " mois";
+}
+
 export default function Mathiko() {
   // ── 1. ÉTAT ──────────────────────────────────────────────────────────────
   // `phase` = la machine à états qui décide quel écran s'affiche. Valeurs :
@@ -1594,6 +1629,15 @@ export default function Mathiko() {
   const cloudSaveTimerRef = useRef(null);
   // Compteur de sauvegardes cloud en cours (pour afficher un petit indicateur).
   const [cloudSyncState, setCloudSyncState] = useState("idle"); // idle | saving | error
+
+  // ── Refuges des copains (fame list) ──────────────────────────────────────
+  // Liste sociale des autres refuges Supabase. Fetch à chaque ouverture de
+  // l'écran Records (choix explicite : liste toujours fraîche, quitte à
+  // solliciter Supabase plus souvent — les visites Records sont rares).
+  // fameState : "idle" avant première visite, "loading" pendant fetch,
+  // "ok"/"error" après. fameList contient les entrées reçues.
+  const [fameState, setFameState] = useState("idle");
+  const [fameList, setFameList] = useState([]);
 
   // ── Réglages de la prochaine partie (choisis dans le menu) ──
   // Selected halves: array of strings like ["2-low", "2-high", "3-low", "3-high"]
@@ -1889,6 +1933,30 @@ export default function Mathiko() {
       });
     }, 1500);
     return () => clearTimeout(t);
+  }, [phase]);
+
+  // ── Fetch fame list à l'ouverture de Records ─────────────────────────────
+  // On refetch systématiquement à chaque entrée dans l'écran Records — la
+  // fraîcheur de la liste prime sur l'économie de requêtes (choix produit).
+  useEffect(() => {
+    if (phase !== "records") return;
+    if (!supabase) return;
+    let cancelled = false;
+    setFameState("loading");
+    (async () => {
+      const { data, error } = await supabase.rpc("list_active_profiles");
+      if (cancelled) return;
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("list_active_profiles RPC error:", error);
+        setFameState("error");
+        setFameList([]);
+      } else {
+        setFameState("ok");
+        setFameList(Array.isArray(data) ? data : []);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [phase]);
 
   // ── 4. ACTIONS ───────────────────────────────────────────────────────────
@@ -3403,6 +3471,78 @@ export default function Mathiko() {
             >
               🔍 Suivi détaillé
             </button>
+
+            {/* ─── Refuges des copains ─────────────────────────────────
+                Section sociale : liste TOUS les refuges Supabase (le refuge
+                courant compris) triés par dernière activité, avec pseudo,
+                avatar, temps relatif, série. But : donner un sentiment de
+                présence des copains sans comparaison compétitive. */}
+            {supabase && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{
+                  fontSize: 11, color: "#D4C8E0", fontWeight: 700,
+                  letterSpacing: 1.5, textTransform: "uppercase",
+                  marginBottom: 10, textAlign: "left",
+                }}>
+                  Refuges des copains
+                </div>
+                {fameState === "loading" && (
+                  <div style={{ fontSize: 12, color: "#9B8FAE", fontStyle: "italic", padding: "8px 0" }}>
+                    Chargement...
+                  </div>
+                )}
+                {fameState === "error" && (
+                  <div style={{ fontSize: 12, color: "#C88A9E", fontStyle: "italic", padding: "8px 0" }}>
+                    Impossible de charger. Réessaie plus tard.
+                  </div>
+                )}
+                {fameState === "ok" && fameList.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#9B8FAE", fontStyle: "italic", padding: "8px 0" }}>
+                    Aucun autre refuge pour l'instant.
+                  </div>
+                )}
+                {fameState === "ok" && fameList.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {fameList.map(f => {
+                      const isMe = cloudUserIdRef.current && f.id === cloudUserIdRef.current;
+                      const streak = f.streak_current || 0;
+                      const tier = streak > 0 ? streakTier(streak) : "";
+                      return (
+                        <div key={f.id} style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "6px 10px", borderRadius: 12,
+                          background: isMe ? "#FDF6E3" : "#FAF7FF",
+                          border: `1.5px solid ${isMe ? "#F0DFA7" : "#EDE5F5"}`,
+                        }}>
+                          <span style={{ fontSize: 22, lineHeight: 1 }}>{f.avatar || "🐾"}</span>
+                          <div style={{ flex: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: 1 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#4A4063" }}>
+                              {f.pseudo}
+                              {isMe && (
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#B39755", marginLeft: 6 }}>
+                                  (c'est toi)
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ fontSize: 10, color: "#9B8FAE", fontWeight: 700 }}>
+                              {timeAgo(f.updated_at)}
+                            </span>
+                          </div>
+                          {streak > 0 && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 800, color: "#9B8FAE",
+                              display: "inline-flex", alignItems: "center", gap: 3,
+                            }}>
+                              {tier} {streak}j
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <p style={{
               marginTop: 14, marginBottom: 0,
@@ -5483,7 +5623,8 @@ export default function Mathiko() {
                 decompositions.push([b2, a2]);
               }
             }
-            const decoText = "Compte-les, il y en a " + total + ", " + a + " groupes de " + b
+            const decoLine1 = "Compte-les, il y en a " + total + ",";
+            const decoLine2 = a + " groupes de " + b
               + decompositions.map(d => " ou " + d[0] + " groupes de " + d[1]).join("") + " !";
 
             return (
@@ -5535,12 +5676,13 @@ export default function Mathiko() {
                   ))}
                 </div>
 
-                {/* 7. « Compte-les, il y en a X, ... » */}
+                {/* 7. « Compte-les, il y en a X, [saut] a groupes de b ... » */}
                 <div style={{
                   fontSize: 12, color: "white", fontWeight: 700, marginTop: 4,
-                  textShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1.3, maxWidth: 340,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.18)", lineHeight: 1.35, maxWidth: 340,
                 }}>
-                  {decoText}
+                  <div>{decoLine1}</div>
+                  <div>{decoLine2}</div>
                 </div>
               </>
             );
